@@ -11,6 +11,8 @@ MVP Phase 1 cho bot Telegram quản lý thu chi cá nhân. Hiện đã có nền
 
 PostgreSQL có dữ liệu bền vững trong volume `postgres_data`. Không đặt bot token thì app vẫn kết nối database nhưng không polling Telegram.
 
+Swagger UI có tại `http://localhost:3000/api`. Hiện API HTTP chưa có endpoint nghiệp vụ vì Phase 1 ưu tiên Telegram; Swagger đã sẵn sàng để mô tả các endpoint quản trị/health khi chúng được thêm.
+
 ## Lệnh đang hỗ trợ
 
 - `/start` — tạo hồ sơ từ Telegram ID.
