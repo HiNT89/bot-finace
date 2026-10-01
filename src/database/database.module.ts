@@ -2,8 +2,12 @@ import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import {
   Category,
+  Budget,
   Goal,
   IncomeSource,
+  NotificationLog,
+  NotificationSettings,
+  RecurringTransaction,
   Transaction,
   User,
   WorkDay,
@@ -18,7 +22,7 @@ import {
       username: process.env.DATABASE_USER || "hint",
       password: process.env.DATABASE_PASSWORD || "123456",
       database: process.env.DATABASE_NAME || "finance_bot",
-      entities: [User, Category, IncomeSource, Transaction, WorkDay, Goal],
+      entities: [User, Category, IncomeSource, Transaction, WorkDay, Goal, Budget, RecurringTransaction, NotificationSettings, NotificationLog],
       synchronize: true,
     }),
   ],

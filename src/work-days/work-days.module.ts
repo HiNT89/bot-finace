@@ -1,0 +1,2 @@
+import { Module } from "@nestjs/common"; import { TypeOrmModule } from "@nestjs/typeorm"; import { WorkDay } from "../database/entities"; import { WorkDaysController } from "./work-days.controller"; import { WorkDaysService } from "./work-days.service";
+@Module({ imports: [TypeOrmModule.forFeature([WorkDay])], controllers: [WorkDaysController], providers: [WorkDaysService], exports: [WorkDaysService] }) export class WorkDaysModule {}

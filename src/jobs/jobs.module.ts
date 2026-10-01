@@ -1,0 +1,1 @@
+import { Module } from "@nestjs/common"; import { RecurringModule } from "../recurring-transactions/recurring.module"; import { RecurringTransactionJob } from "./recurring-transaction.job"; @Module({ imports: [RecurringModule], providers: [RecurringTransactionJob] }) export class JobsModule {}

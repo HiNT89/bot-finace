@@ -1,0 +1,2 @@
+import { Injectable } from "@nestjs/common"; import { InjectRepository } from "@nestjs/typeorm"; import { Repository } from "typeorm"; import { IncomeSource } from "../database/entities";
+@Injectable() export class IncomeSourcesService { constructor(@InjectRepository(IncomeSource) private readonly sources: Repository<IncomeSource>) {} list(userId: string) { return this.sources.find({ where: { userId }, order: { name: "ASC" } }); } create(userId: string, name: string) { return this.sources.save(this.sources.create({ userId, name })); } }

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Transaction } from "../database/entities";
@@ -35,6 +35,13 @@ export class TransactionsService {
       order: { createdAt: "ASC" },
     });
   }
+  async update(id: string, amount?: number, description?: string) {
+    const transaction = await this.transactions.findOneBy({ id });
+    if (!transaction) throw new NotFoundException("Không tìm thấy giao dịch.");
+    if (amount !== undefined && (!Number.isSafeInteger(amount) || amount <= 0)) throw new BadRequestException("Số tiền phải là số nguyên dương.");
+    return this.transactions.save({ ...transaction, ...(amount !== undefined ? { amount: String(amount) } : {}), ...(description !== undefined ? { description } : {}) });
+  }
+  async remove(id: string) { const result = await this.transactions.delete(id); if (!result.affected) throw new NotFoundException("Không tìm thấy giao dịch."); }
   async totals(userId: string, from: string, to: string) {
     const rows = await this.transactions
       .createQueryBuilder("t")

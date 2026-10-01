@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import {
   ApiCreatedResponse,
   ApiOkResponse,
@@ -33,4 +33,8 @@ export class TransactionsController {
   listForDay(@Query("userId") userId: string, @Query("date") date: string) {
     return this.transactions.listForDay(userId, date);
   }
+  @Patch(":id") @ApiOperation({ summary: "Update transaction amount or description" })
+  update(@Param("id") id: string, @Body() body: { amount?: number; description?: string }) { return this.transactions.update(id, body.amount, body.description); }
+  @Delete(":id") @ApiOperation({ summary: "Delete a transaction" })
+  remove(@Param("id") id: string) { return this.transactions.remove(id); }
 }

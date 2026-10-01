@@ -2,8 +2,12 @@ import "dotenv/config";
 import { DataSource } from "typeorm";
 import {
   Category,
+  Budget,
   Goal,
   IncomeSource,
+  NotificationLog,
+  NotificationSettings,
+  RecurringTransaction,
   Transaction,
   User,
   WorkDay,
@@ -16,5 +20,5 @@ export default new DataSource({
   username: process.env.DATABASE_USER || "finance",
   password: process.env.DATABASE_PASSWORD || "finance",
   database: process.env.DATABASE_NAME || "finance_bot",
-  entities: [User, Category, IncomeSource, Transaction, WorkDay, Goal],
+  entities: [User, Category, IncomeSource, Transaction, WorkDay, Goal, Budget, RecurringTransaction, NotificationSettings, NotificationLog],
 });

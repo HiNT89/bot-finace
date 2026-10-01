@@ -1,2 +1,2 @@
-import { Module } from '@nestjs/common'; import { TransactionsModule } from '../transactions/transactions.module'; import { ReportsController } from './reports.controller'; import { ReportsService } from './reports.service';
-@Module({ imports: [TransactionsModule], controllers: [ReportsController], providers: [ReportsService], exports: [ReportsService] }) export class ReportsModule {}
+import { Module } from '@nestjs/common'; import { GoalsModule } from '../goals/goals.module'; import { TransactionsModule } from '../transactions/transactions.module'; import { WorkDaysModule } from '../work-days/work-days.module'; import { ReportsController } from './reports.controller'; import { ReportsService } from './reports.service';
+@Module({ imports: [TransactionsModule, GoalsModule, WorkDaysModule], controllers: [ReportsController], providers: [ReportsService], exports: [ReportsService] }) export class ReportsModule {}
