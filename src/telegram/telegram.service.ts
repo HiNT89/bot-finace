@@ -1,7 +1,18 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from "@nestjs/common";
 import { Bot, Context } from "grammy";
 import { monthRange } from "../common/date";
-import { GoalType, RecurringFrequency, TargetType, TransactionType, WorkDayType } from "../common/enums";
+import {
+  GoalType,
+  RecurringFrequency,
+  TargetType,
+  TransactionType,
+  WorkDayType,
+} from "../common/enums";
 import { BudgetsService } from "../budgets/budgets.service";
 import { CategoriesService } from "../categories/categories.service";
 import { GoalsService } from "../goals/goals.service";
@@ -12,24 +23,281 @@ import { UsersService } from "../users/users.service";
 import { WorkDaysService } from "../work-days/work-days.service";
 @Injectable()
 export class TelegramService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(TelegramService.name); private bot?: Bot;
-  constructor(private readonly users: UsersService, private readonly transactions: TransactionsService, private readonly reports: ReportsService, private readonly workDays: WorkDaysService, private readonly goals: GoalsService, private readonly budgets: BudgetsService, private readonly categories: CategoriesService, private readonly recurring: RecurringService) {}
-  async onModuleInit() { const token = process.env.TELEGRAM_BOT_TOKEN; if (!token) { this.logger.warn("TELEGRAM_BOT_TOKEN is not set; bot polling is disabled."); return; } this.bot = new Bot(token); this.bot.command("start", (ctx) => this.start(ctx)); this.bot.command("help", (ctx) => this.help(ctx)); this.bot.command("td", (ctx) => this.today(ctx)); this.bot.command("day", (ctx) => this.day(ctx)); this.bot.command("history", (ctx) => this.history(ctx)); this.bot.command("week", (ctx) => this.week(ctx)); this.bot.command("month", (ctx) => this.month(ctx)); this.bot.command("budget", (ctx) => this.budget(ctx)); this.bot.command("recurring", (ctx) => this.recurringCommand(ctx)); this.bot.command("in", (ctx) => this.transaction(ctx, TransactionType.INCOME)); this.bot.command("ex", (ctx) => this.transaction(ctx, TransactionType.EXPENSE)); this.bot.command("work", (ctx) => this.work(ctx)); this.bot.command("leave", (ctx) => this.leave(ctx)); this.bot.command("goal", (ctx) => this.goal(ctx)); this.bot.on("message:text", (ctx) => this.quickInput(ctx)); this.bot.catch((err) => this.logger.error(err.message)); void this.bot.start({ onStart: () => this.logger.log("Telegram polling started") }); }
-  async onModuleDestroy() { await this.bot?.stop(); }
-  private async user(ctx: Context) { if (!ctx.from) throw new Error("Missing Telegram user"); return this.users.findOrCreate(ctx.from.id, ctx.from.username, ctx.from.first_name); }
-  private async start(ctx: Context) { await this.user(ctx); await this.help(ctx); }
-  private async help(ctx: Context) { await ctx.reply("💰 MỘC CHI — HƯỚNG DẪN\n\n💰 THU CHI\n/in <số tiền> <mô tả>\n/ex <số tiền> <mô tả>\nVí dụ: /in 500000 freelance\n\n📅 BÁO CÁO\n/td — hôm nay\n/day <dd/mm|yyyy-mm-dd>\n/history <dd/mm|yyyy-mm-dd>\n/week — báo cáo tuần\n/month — báo cáo tháng\n\n💼 ĐI LÀM\n/work — Office\n/work remote — Remote\n/leave — Nghỉ\n\n🎯 MỤC TIÊU\n/goal income|expense|saving|work <số> [tên]\nVí dụ: /goal saving 10000000 tiết kiệm tháng\n\n💰 NGÂN SÁCH\n/budget — xem ngân sách tháng\n/budget <category> <số tiền>\n\n🔄 ĐỊNH KỲ\n/recurring — xem giao dịch định kỳ\n/recurring income|expense <số> <mô tả> daily|weekly|monthly|yearly\n\n⚡ NHẬP NHANH\n+500k freelance\n50k ăn sáng\n+15tr lương"); }
-  private async today(ctx: Context) { const u = await this.user(ctx); await ctx.reply(await this.reports.daily(u.id)); }
-  private async month(ctx: Context) { const u = await this.user(ctx); await ctx.reply(await this.reports.monthly(u.id)); }
-  private parseDate(value: string) { if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value; const m = value.match(/^(\d{1,2})\/(\d{1,2})$/); if (m) return `${new Date().getFullYear()}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`; return new Date().toISOString().slice(0, 10); }
-  private async day(ctx: Context) { const u = await this.user(ctx); await ctx.reply(await this.reports.daily(u.id, this.parseDate(String(ctx.match).trim()))); }
-  private async week(ctx: Context) { const u = await this.user(ctx); await ctx.reply(await this.reports.weekly(u.id)); }
-  private async history(ctx: Context) { const u = await this.user(ctx); const date = this.parseDate(String(ctx.match).trim()); const rows = await this.transactions.listForDay(u.id, date); const line = rows.map((row) => `${row.type === TransactionType.INCOME ? "💰 +" : "💸 -"}${new Intl.NumberFormat("vi-VN").format(Number(row.amount))}đ ${row.description ?? ""}`).join("\n"); await ctx.reply(`📋 TRANSACTIONS\n${date}\n\n${line || "Chưa có giao dịch"}`); }
-  private async budget(ctx: Context) { const u = await this.user(ctx); const [categoryName, amountText] = String(ctx.match).trim().split(/\s+/); const range = monthRange(); if (!categoryName) { const budgets = await this.budgets.list(u.id, range.start); const usage = await Promise.all(budgets.map((item) => this.budgets.usage(item))); return ctx.reply(`💰 BUDGET — ${range.label}\n\n${usage.map((item) => `${item.usagePercent}% ${item.status}: ${new Intl.NumberFormat("vi-VN").format(item.used)}đ / ${item.amount}đ`).join("\n") || "Chưa có ngân sách"}`); } const amount = Number(amountText); const categories = await this.categories.list(u.id, TransactionType.EXPENSE); const category = categories.find((item) => item.name.toLowerCase() === categoryName.toLowerCase()); if (!category || !Number.isSafeInteger(amount) || amount <= 0) return ctx.reply("Cú pháp: /budget <category> <amount>. Category phải là tên một category chi tiêu hiện có."); await this.budgets.create({ userId: u.id, categoryId: category.id, amount: String(amount), startDate: range.start, endDate: range.end }); await ctx.reply(`💰 Đã đặt ngân sách ${category.name}: ${new Intl.NumberFormat("vi-VN").format(amount)}đ`); }
-  private async recurringCommand(ctx: Context) { const u = await this.user(ctx); const [kind, amountText, ...parts] = String(ctx.match).trim().split(/\s+/); if (!kind) { const items = await this.recurring.list(u.id); return ctx.reply(`🔄 RECURRING\n${items.map((item) => `${item.type} ${item.amount}đ — ${item.frequency}`).join("\n") || "Chưa có giao dịch định kỳ"}`); } const frequencyText = parts.pop()?.toUpperCase(); const type = kind === "income" ? TransactionType.INCOME : kind === "expense" ? TransactionType.EXPENSE : undefined; const frequency = frequencyText && RecurringFrequency[frequencyText as keyof typeof RecurringFrequency]; const amount = Number(amountText); if (!type || !frequency || !Number.isSafeInteger(amount) || amount <= 0 || !parts.length) return ctx.reply("Cú pháp: /recurring income|expense <amount> <mô tả> daily|weekly|monthly|yearly"); const date = new Date().toISOString().slice(0, 10); await this.recurring.create({ userId: u.id, type, amount: String(amount), description: parts.join(" "), frequency, nextRunAt: date, startDate: date, isActive: true }); await ctx.reply("🔄 Đã tạo giao dịch định kỳ."); }
-  private async transaction(ctx: Context, type: TransactionType) { const u = await this.user(ctx); const [amountText, ...rest] = String(ctx.match).trim().split(/\s+/); const amount = Number(amountText); if (!amountText || !Number.isSafeInteger(amount) || amount <= 0) return ctx.reply(`Cú pháp: /${type === TransactionType.INCOME ? "in" : "ex"} 50000 mô tả`); await this.transactions.create(u.id, type, amount, rest.join(" ") || undefined); await ctx.reply(`${type === TransactionType.INCOME ? "💰 Đã thêm thu nhập" : "💸 Đã thêm chi tiêu"}: ${new Intl.NumberFormat("vi-VN").format(amount)}đ`); }
-  private async work(ctx: Context) { const u = await this.user(ctx); const type = String(ctx.match).trim().toLowerCase() === "remote" ? WorkDayType.REMOTE : WorkDayType.OFFICE; await this.workDays.upsert(u.id, type); await ctx.reply(`💼 Đã đánh dấu đi làm: ${type}`); }
-  private async leave(ctx: Context) { const u = await this.user(ctx); await this.workDays.upsert(u.id, WorkDayType.LEAVE); await ctx.reply("🏖️ Đã đánh dấu nghỉ."); }
-  private async goal(ctx: Context) { const u = await this.user(ctx); const [kind, amountText, ...name] = String(ctx.match).trim().split(/\s+/); const amount = Number(amountText); const type = ({ income: GoalType.INCOME, expense: GoalType.EXPENSE, saving: GoalType.SAVING, work: GoalType.WORK_DAYS } as Record<string, GoalType>)[kind]; if (!type || !Number.isSafeInteger(amount) || amount <= 0) return ctx.reply("Cú pháp: /goal income|expense|saving|work số [tên]"); const range = monthRange(); const targetType = type === GoalType.EXPENSE ? TargetType.MAX : type === GoalType.WORK_DAYS ? TargetType.EXACT : TargetType.MIN; await this.goals.create(u.id, name.join(" ") || kind, type, targetType, amount, range.start, range.end); await ctx.reply("🎯 Đã tạo mục tiêu tháng."); }
-  private async quickInput(ctx: Context) { const text = ctx.message?.text?.trim() ?? ""; if (text.startsWith("/")) return; const match = text.match(/^(\+)?\s*(\d+(?:[.,]\d+)?)\s*(k|nghìn|tr|triệu|m)?\s+(.+)$/i); if (!match) return; const multiplier = /^(tr|triệu|m)$/i.test(match[3] ?? "") ? 1_000_000 : /^(k|nghìn)$/i.test(match[3] ?? "") ? 1_000 : 1; const amount = Math.round(Number(match[2].replace(",", ".")) * multiplier); if (!Number.isSafeInteger(amount) || amount <= 0) return; const u = await this.user(ctx); const type = match[1] ? TransactionType.INCOME : TransactionType.EXPENSE; await this.transactions.create(u.id, type, amount, match[4]); await ctx.reply(`${type === TransactionType.INCOME ? "💰 Thu nhập" : "💸 Chi tiêu"} đã ghi: ${new Intl.NumberFormat("vi-VN").format(amount)}đ`); }
+  private readonly logger = new Logger(TelegramService.name);
+  private bot?: Bot;
+  constructor(
+    private readonly users: UsersService,
+    private readonly transactions: TransactionsService,
+    private readonly reports: ReportsService,
+    private readonly workDays: WorkDaysService,
+    private readonly goals: GoalsService,
+    private readonly budgets: BudgetsService,
+    private readonly categories: CategoriesService,
+    private readonly recurring: RecurringService,
+  ) {}
+  async onModuleInit() {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) {
+      this.logger.warn(
+        "TELEGRAM_BOT_TOKEN is not set; bot polling is disabled.",
+      );
+      return;
+    }
+    this.bot = new Bot(token);
+    this.bot.command("start", (ctx) => this.start(ctx));
+    this.bot.command("help", (ctx) => this.help(ctx));
+    this.bot.command("td", (ctx) => this.today(ctx));
+    this.bot.command("day", (ctx) => this.day(ctx));
+    this.bot.command("history", (ctx) => this.history(ctx));
+    this.bot.command("week", (ctx) => this.week(ctx));
+    this.bot.command("month", (ctx) => this.month(ctx));
+    this.bot.command("budget", (ctx) => this.budget(ctx));
+    this.bot.command("recurring", (ctx) => this.recurringCommand(ctx));
+    this.bot.command("in", (ctx) =>
+      this.transaction(ctx, TransactionType.INCOME),
+    );
+    this.bot.command("ex", (ctx) =>
+      this.transaction(ctx, TransactionType.EXPENSE),
+    );
+    this.bot.command("work", (ctx) => this.work(ctx));
+    this.bot.command("leave", (ctx) => this.leave(ctx));
+    this.bot.command("goal", (ctx) => this.goal(ctx));
+    this.bot.on("message:text", (ctx) => this.quickInput(ctx));
+    this.bot.catch((err) => this.logger.error(err.message));
+    void this.bot.start({
+      onStart: () => this.logger.log("Telegram polling started"),
+    });
+  }
+  async onModuleDestroy() {
+    await this.bot?.stop();
+  }
+  private async user(ctx: Context) {
+    if (!ctx.from) throw new Error("Missing Telegram user");
+    return this.users.findOrCreate(
+      ctx.from.id,
+      ctx.from.username,
+      ctx.from.first_name,
+    );
+  }
+  private async start(ctx: Context) {
+    await this.user(ctx);
+    await this.help(ctx);
+  }
+  private async help(ctx: Context) {
+    await ctx.reply(
+      "💰 MỘC CHI — HƯỚNG DẪN\n\n💰 THU CHI\n/in <số tiền> <mô tả>\n/ex <số tiền> <mô tả>\nVí dụ: /in 3k freelance\n\n📅 BÁO CÁO\n/td — hôm nay\n/day <dd/mm|yyyy-mm-dd>\n/history <dd/mm|yyyy-mm-dd>\n/week — báo cáo tuần\n/month — báo cáo tháng\n\n💼 ĐI LÀM\n/work — Office\n/work remote — Remote\n/leave — Nghỉ\n\n🎯 MỤC TIÊU\n/goal income|expense|saving|work <số> [tên]\nVí dụ: /goal saving 10tr tiết kiệm tháng\n\n💰 NGÂN SÁCH\n/budget — xem ngân sách tháng\n/budget <category> <số tiền>\nVí dụ: /budget ăn 3tr\n\n🔄 ĐỊNH KỲ\n/recurring — xem giao dịch định kỳ\n/recurring income|expense <số> <mô tả> daily|weekly|monthly|yearly\nVí dụ: /recurring expense 260k Netflix monthly\n\n⚡ NHẬP NHANH\n+500k freelance\n50k ăn sáng\n+15tr lương",
+    );
+  }
+  private async today(ctx: Context) {
+    const u = await this.user(ctx);
+    await ctx.reply(await this.reports.daily(u.id));
+  }
+  private async month(ctx: Context) {
+    const u = await this.user(ctx);
+    await ctx.reply(await this.reports.monthly(u.id));
+  }
+  private parseDate(value: string) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const m = value.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (m)
+      return `${new Date().getFullYear()}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    return new Date().toISOString().slice(0, 10);
+  }
+  private async day(ctx: Context) {
+    const u = await this.user(ctx);
+    await ctx.reply(
+      await this.reports.daily(u.id, this.parseDate(String(ctx.match).trim())),
+    );
+  }
+  private async week(ctx: Context) {
+    const u = await this.user(ctx);
+    await ctx.reply(await this.reports.weekly(u.id));
+  }
+  private async history(ctx: Context) {
+    const u = await this.user(ctx);
+    const date = this.parseDate(String(ctx.match).trim());
+    const rows = await this.transactions.listForDay(u.id, date);
+    const line = rows
+      .map(
+        (row) =>
+          `${row.type === TransactionType.INCOME ? "💰 +" : "💸 -"}${new Intl.NumberFormat("vi-VN").format(Number(row.amount))}đ ${row.description ?? ""}`,
+      )
+      .join("\n");
+    await ctx.reply(
+      `📋 TRANSACTIONS\n${date}\n\n${line || "Chưa có giao dịch"}`,
+    );
+  }
+  private parseAmount(value?: string) {
+    const match = value
+      ?.trim()
+      .match(/^(\d+(?:[.,]\d+)?)\s*(k|nghìn|tr|triệu|m)?$/i);
+    if (!match) return undefined;
+    const multiplier = /^(tr|triệu|m)$/i.test(match[2] ?? "")
+      ? 1_000_000
+      : /^(k|nghìn)$/i.test(match[2] ?? "")
+        ? 1_000
+        : 1;
+    const amount = Math.round(Number(match[1].replace(",", ".")) * multiplier);
+    return Number.isSafeInteger(amount) && amount > 0 ? amount : undefined;
+  }
+  private async budget(ctx: Context) {
+    const u = await this.user(ctx);
+    const [categoryName, amountText] = String(ctx.match).trim().split(/\s+/);
+    const range = monthRange();
+    if (!categoryName) {
+      const budgets = await this.budgets.list(u.id, range.start);
+      const usage = await Promise.all(
+        budgets.map((item) => this.budgets.usage(item)),
+      );
+      return ctx.reply(
+        `💰 BUDGET — ${range.label}\n\n${usage.map((item) => `${item.usagePercent}% ${item.status}: ${new Intl.NumberFormat("vi-VN").format(item.used)}đ / ${item.amount}đ`).join("\n") || "Chưa có ngân sách"}`,
+      );
+    }
+    const amount = this.parseAmount(amountText);
+    const categories = await this.categories.list(
+      u.id,
+      TransactionType.EXPENSE,
+    );
+    const category = categories.find(
+      (item) => item.name.toLowerCase() === categoryName.toLowerCase(),
+    );
+    if (!category || !amount)
+      return ctx.reply(
+        "Cú pháp: /budget <category> <amount>, ví dụ /budget ăn 3tr.",
+      );
+    await this.budgets.create({
+      userId: u.id,
+      categoryId: category.id,
+      amount: String(amount),
+      startDate: range.start,
+      endDate: range.end,
+    });
+    await ctx.reply(
+      `💰 Đã đặt ngân sách ${category.name}: ${new Intl.NumberFormat("vi-VN").format(amount)}đ`,
+    );
+  }
+  private async recurringCommand(ctx: Context) {
+    const u = await this.user(ctx);
+    const [kind, amountText, ...parts] = String(ctx.match).trim().split(/\s+/);
+    if (!kind) {
+      const items = await this.recurring.list(u.id);
+      return ctx.reply(
+        `🔄 RECURRING\n${items.map((item) => `${item.type} ${item.amount}đ — ${item.frequency}`).join("\n") || "Chưa có giao dịch định kỳ"}`,
+      );
+    }
+    const frequencyText = parts.pop()?.toUpperCase();
+    const type =
+      kind === "income"
+        ? TransactionType.INCOME
+        : kind === "expense"
+          ? TransactionType.EXPENSE
+          : undefined;
+    const frequency =
+      frequencyText &&
+      RecurringFrequency[frequencyText as keyof typeof RecurringFrequency];
+    const amount = this.parseAmount(amountText);
+    if (!type || !frequency || !amount || !parts.length)
+      return ctx.reply(
+        "Cú pháp: /recurring income|expense <amount> <mô tả> daily|weekly|monthly|yearly",
+      );
+    const date = new Date().toISOString().slice(0, 10);
+    await this.recurring.create({
+      userId: u.id,
+      type,
+      amount: String(amount),
+      description: parts.join(" "),
+      frequency,
+      nextRunAt: date,
+      startDate: date,
+      isActive: true,
+    });
+    await ctx.reply("🔄 Đã tạo giao dịch định kỳ.");
+  }
+  private async transaction(ctx: Context, type: TransactionType) {
+    const u = await this.user(ctx);
+    const [amountText, ...rest] = String(ctx.match).trim().split(/\s+/);
+    const amount = this.parseAmount(amountText);
+    if (!amount)
+      return ctx.reply(
+        `Cú pháp: /${type === TransactionType.INCOME ? "in" : "ex"} 3k mô tả`,
+      );
+    await this.transactions.create(
+      u.id,
+      type,
+      amount,
+      rest.join(" ") || undefined,
+    );
+    await ctx.reply(
+      `${type === TransactionType.INCOME ? "💰 Đã thêm thu nhập" : "💸 Đã thêm chi tiêu"}: ${new Intl.NumberFormat("vi-VN").format(amount)}đ`,
+    );
+  }
+  private async work(ctx: Context) {
+    const u = await this.user(ctx);
+    const type =
+      String(ctx.match).trim().toLowerCase() === "remote"
+        ? WorkDayType.REMOTE
+        : WorkDayType.OFFICE;
+    await this.workDays.upsert(u.id, type);
+    await ctx.reply(`💼 Đã đánh dấu đi làm: ${type}`);
+  }
+  private async leave(ctx: Context) {
+    const u = await this.user(ctx);
+    await this.workDays.upsert(u.id, WorkDayType.LEAVE);
+    await ctx.reply("🏖️ Đã đánh dấu nghỉ.");
+  }
+  private async goal(ctx: Context) {
+    const u = await this.user(ctx);
+    const [kind, amountText, ...name] = String(ctx.match).trim().split(/\s+/);
+    const amount = this.parseAmount(amountText);
+    const type = (
+      {
+        income: GoalType.INCOME,
+        expense: GoalType.EXPENSE,
+        saving: GoalType.SAVING,
+        work: GoalType.WORK_DAYS,
+      } as Record<string, GoalType>
+    )[kind];
+    if (!type || !amount)
+      return ctx.reply(
+        "Cú pháp: /goal income|expense|saving|work số [tên], ví dụ 10tr.",
+      );
+    const range = monthRange();
+    const targetType =
+      type === GoalType.EXPENSE
+        ? TargetType.MAX
+        : type === GoalType.WORK_DAYS
+          ? TargetType.EXACT
+          : TargetType.MIN;
+    await this.goals.create(
+      u.id,
+      name.join(" ") || kind,
+      type,
+      targetType,
+      amount,
+      range.start,
+      range.end,
+    );
+    await ctx.reply("🎯 Đã tạo mục tiêu tháng.");
+  }
+  private async quickInput(ctx: Context) {
+    const text = ctx.message?.text?.trim() ?? "";
+    if (text.startsWith("/")) return;
+    const match = text.match(
+      /^(\+)?\s*(\d+(?:[.,]\d+)?)\s*(k|nghìn|tr|triệu|m)?\s+(.+)$/i,
+    );
+    if (!match) return;
+    const multiplier = /^(tr|triệu|m)$/i.test(match[3] ?? "")
+      ? 1_000_000
+      : /^(k|nghìn)$/i.test(match[3] ?? "")
+        ? 1_000
+        : 1;
+    const amount = Math.round(Number(match[2].replace(",", ".")) * multiplier);
+    if (!Number.isSafeInteger(amount) || amount <= 0) return;
+    const u = await this.user(ctx);
+    const type = match[1] ? TransactionType.INCOME : TransactionType.EXPENSE;
+    await this.transactions.create(u.id, type, amount, match[4]);
+    await ctx.reply(
+      `${type === TransactionType.INCOME ? "💰 Thu nhập" : "💸 Chi tiêu"} đã ghi: ${new Intl.NumberFormat("vi-VN").format(amount)}đ`,
+    );
+  }
 }
